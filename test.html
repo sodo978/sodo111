@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trích xuất dữ liệu</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 20px;
+            background-color: #f9f9f9;
+        }
+        h1 {
+            color: #4A90E2;
+        }
+        textarea {
+            width: 100%;
+            height: 150px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 10px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+        th {
+            background-color: #4A90E2;
+            color: white;
+        }
+        button {
+            margin-top: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .delete-button {
+            background-color: #e74c3c;
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
+        .delete-button:hover {
+            background-color: #c0392b;
+        }
+        .checkbox-container label {
+            margin-right: 15px;
+        }
+        .search-info {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
+        #editPopup {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            z-index: 100;
+            width: 800px;
+        }
+        #editPopup h2 {
+            color: #4A90E2;
+            margin-bottom: 15px;
+        }
+        #editPopup label {
+            display: block;
+            margin-top: 10px;
+        }
+        #editPopup input[type="text"] {
+            width: calc(100% - 10px);
+            padding: 8px;
+            margin-top: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        #editPopup button {
+            margin-top: 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+        }
+        #editPopup button:hover {
+            background-color: #45a049;
+        }
+        #editPopup button[onclick="closeEditPopup()"] {
+            background-color: #e74c3c;
+        }
+        #editPopup button[onclick="closeEditPopup()"]:hover {
+            background-color: #c0392b;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Trích xuất dữ liệu</h1>
+<textarea id="inputData" placeholder="Dán dữ liệu vào đây..."></textarea>
+<button id="extractButton">Trích xuất dữ liệu</button>
+<button id="downloadButton" style="display:none;">Tải xuống Excel</button>
+<button id="copyButton" style="display:none;">Sao chép dữ liệu</button>
+<button id="resetButton" style="display:none;">Reset</button>
+
+<input type="text" id="searchInput" placeholder="Tìm kiếm tổng hợp..." style="margin-top: 20px; width: 100%; padding: 8px;"/>
+<div class="search-info" id="searchInfo" style="display:none;"></div>
+<div class="search-info" id="totalAmount" style="display:none;"></div>
+
+<div class="checkbox-container">
+    <label><input type="checkbox" class="searchColumn" data-column="beforeMoney" onchange="toggleColumn(this)">Người nhận</label>
+    <label><input type="checkbox" class="searchColumn" data-column="money" onchange="toggleColumn(this)">Số tiền</label>
+    <label><input type="checkbox" class="searchColumn" data-column="afterMoney" onchange="toggleColumn(this)">Người chuyển</label>
+    <label><input type="checkbox" id="toggleActionColumn" onchange="toggleActionColumn(this)" checked>Thao tác</label>
+
+</div>
+
+<table id="resultTable" style="display:none;">
+    <thead>
+        <tr>
+            <th class="beforeMoney">Người nhận</th>
+            <th class="money">Số tiền</th>
+            <th class="afterMoney">Người chuyển</th>
+            <th class="actionColumn" style="display:none;">Thao tác</th>
+        </tr>
+    </thead>
+    <tbody id="resultBody">
+    </tbody>
+</table>
+<div class="notification" id="notification">Đã sao chép!</div>
+
+<div id="editPopup">
+    <h2>Sửa dữ liệu</h2>
+    <label>Người nhận:</label>
+    <input type="text" id="editBeforeMoney" />
+    <br>
+    <label>Số tiền:</label>
+    <input type="text" id="editMoney" />
+    <br>
+    <label>Người chuyển:</label>
+    <input type="text" id="editAfterMoney" />
+    <br>
+    <button id="saveEditButton">Lưu</button>
+    <button onclick="closeEditPopup()">Hủy</button>
+</div>
+
+<script>
+    let currentData = [];
+    let currentRow;
+
+    document.getElementById('extractButton').addEventListener('click', function () {
+        const inputData = document.getElementById('inputData').value.trim();
+        const lines = inputData.split('\n');
+        const resultBody = document.getElementById('resultBody');
+        resultBody.innerHTML = ''; 
+        currentData = []; 
+
+        const regex = /([-+]?\d{1,}00000)/g;
+
+        for (let line of lines) {
+            const matches = line.match(regex);
+            if (matches) {
+                for (let match of matches) {
+                    const beforeMoney = line.split(match)[0].trim();
+                    const afterMoney = line.split(match)[1].trim();
+                    currentData.push({ beforeMoney, money: match, afterMoney });
+                }
+            }
+        }
+
+        if (currentData.length === 0) {
+            alert('Không tìm thấy dữ liệu hợp lệ.');
+            return;
+        }
+
+        const rowsToRender = currentData.slice(0, 20); // Chỉ render 20 hàng đầu tiên
+        for (let item of rowsToRender) {
+            addRowToTable(item);
+        }
+
+        document.getElementById('resultTable').style.display = 'table';
+        document.getElementById('downloadButton').style.display = 'inline-block';
+        document.getElementById('copyButton').style.display = 'inline-block';
+        document.getElementById('resetButton').style.display = 'inline-block';
+        updateTotalAmount();
+    });
+
+    function addRowToTable(item) {
+    const resultBody = document.getElementById('resultBody');
+    const row = document.createElement('tr');
+    row.innerHTML = `
+        <td class="beforeMoney">${item.beforeMoney}</td>
+        <td class="money">${item.money}</td>
+        <td class="afterMoney">${item.afterMoney}</td>
+        <td class="actionColumn" style="display:none;">
+            <button class="delete-button" onclick="deleteRow(this)">Xóa</button>
+            <button class="edit-button" onclick="editRow(this)">Sửa</button>
+        </td>
+    `;
+    resultBody.appendChild(row);
+}
+
+    document.getElementById('downloadButton').addEventListener('click', function () {
+        const workbook = XLSX.utils.book_new();
+        const worksheet = XLSX.utils.json_to_sheet(currentData);
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
+        XLSX.writeFile(workbook, 'data.xlsx');
+    });
+
+    document.getElementById('copyButton').addEventListener('click', function () {
+        const table = document.getElementById('resultTable');
+        const range = document.createRange();
+        range.selectNode(table);
+        window.getSelection().removeAllRanges();
+        window.getSelection().addRange(range);
+        document.execCommand('copy');
+        window.getSelection().removeAllRanges();
+
+        const notification = document.getElementById('notification');
+        notification.style.display = 'block';
+        setTimeout(() => {
+            notification.style.display = 'none';
+        }, 2000);
+    });
+
+    document.getElementById('resetButton').addEventListener('click', function () {
+        document.getElementById('inputData').value = '';
+        document.getElementById('resultTable').style.display = 'none';
+        document.getElementById('downloadButton').style.display = 'none';
+        document.getElementById('copyButton').style.display = 'none';
+        document.getElementById('resetButton').style.display = 'none';
+    });
+
+    function toggleColumn(checkbox) {
+    const columnClass = checkbox.getAttribute('data-column');
+    const cells = document.querySelectorAll(`.${columnClass}`);
+
+    for (const cell of cells) {
+        cell.style.display = checkbox.checked ? 'none' : '';
+    }
+}
+
+    document.getElementById('searchInput').addEventListener('input', function () {
+        const searchValue = this.value.toLowerCase();
+        const rows = document.querySelectorAll('#resultBody tr');
+
+        for (let row of rows) {
+            const rowText = row.innerText.toLowerCase();
+            row.style.display = rowText.includes(searchValue) ? '' : 'none';
+        }
+
+        updateSearchInfo();
+    });
+
+    // Tìm kiếm chính xác (chỉ trong cột đầu tiên)
+    document.getElementById('exactSearchInput').addEventListener('input', function () {
+        const searchValue = this.value.trim().toLowerCase(); // Chuyển giá trị tìm kiếm về chữ thường
+        const rows = document.querySelectorAll('#resultBody tr');
+
+        for (const row of rows) {
+            const firstCellText = row.children[0].innerText.toLowerCase().trim(); // Chỉ lấy giá trị từ ô đầu tiên trong hàng
+            const match = firstCellText.includes(searchValue); // Kiểm tra nếu chuỗi tìm kiếm nằm trong ô đầu tiên
+            row.style.display = match || searchValue === "" ? '' : 'none'; // Hiển thị hàng nếu khớp hoặc ô tìm kiếm trống
+        }
+
+        updateSearchInfo();
+    });
+
+    function updateSearchInfo() {
+        const totalRows = document.querySelectorAll('#resultBody tr').length;
+        const visibleRows = Array.from(document.querySelectorAll('#resultBody tr')).filter(row => row.style.display !== 'none').length;
+
+        const searchInfo = document.getElementById('searchInfo');
+        searchInfo.innerText = `Tìm thấy ${visibleRows} trong tổng số ${totalRows} dòng`;
+        searchInfo.style.display = 'block';
+    }
+
+    function updateTotalAmount() {
+        const totalAmount = currentData.reduce((total, item) => total + parseInt(item.money), 0);
+        const totalAmountElement = document.getElementById('totalAmount');
+        totalAmountElement.innerText = `Tổng số tiền: ${totalAmount.toLocaleString()} VND`;
+        totalAmountElement.style.display = 'block';
+    }
+
+    function editRow(button) {
+        const row = button.closest('tr');
+        currentRow = row;
+        const cells = row.querySelectorAll('td');
+
+        document.getElementById('editBeforeMoney').value = cells[0].innerText;
+        document.getElementById('editMoney').value = cells[1].innerText;
+        document.getElementById('editAfterMoney').value = cells[2].innerText;
+
+        document.getElementById('editPopup').style.display = 'block';
+    }
+
+    document.getElementById('saveEditButton').addEventListener('click', function () {
+        const beforeMoney = document.getElementById('editBeforeMoney').value;
+        const money = document.getElementById('editMoney').value;
+        const afterMoney = document.getElementById('editAfterMoney').value;
+
+        const cells = currentRow.querySelectorAll('td');
+        cells[0].innerText = beforeMoney;
+        cells[1].innerText = money;
+        cells[2].innerText = afterMoney;
+
+        document.getElementById('editPopup').style.display = 'none';
+    });
+
+    function closeEditPopup() {
+        document.getElementById('editPopup').style.display = 'none';
+    }
+
+    function toggleActionColumn(checkbox) {
+    // Chọn tất cả các ô trong cột "Thao tác" (bao gồm th và td)
+    const actionCells = document.querySelectorAll('#resultTable th:last-child, #resultTable td.actionColumn');
+
+    for (const cell of actionCells) {
+        cell.style.display = checkbox.checked ? 'none' : ''; // Ẩn tiêu đề và nội dung khi checkbox được chọn
+    }
+}
+
+// Ẩn cột "Thao tác" khi trang tải
+window.addEventListener('DOMContentLoaded', () => {
+    toggleActionColumn(document.getElementById('toggleActionColumn'));
+});
+
+</script>
+
+</body>
+</html>
